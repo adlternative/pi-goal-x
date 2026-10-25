@@ -963,6 +963,35 @@ export function latestAuditorResultForGoal(events: GoalLedgerEvent[], goalId: st
   return undefined;
 }
 
+/**
+ * How the goal's most recent completion review ended, or that it never ended.
+ *
+ * The ledger can only record transitions the process lived through: a review
+ * whose process died mid-audit leaves `audit_started` as its last audit event.
+ * Callers need that distinction to tell "no review yet" from "the review was
+ * interrupted", so this walks backwards to the newest audit event of any kind.
+ */
+export type GoalAuditLifecycle =
+  | { state: "none" }
+  | { state: "unsettled"; startedAt: string; provider?: string; model?: string }
+  | { state: "settled"; verdict: "approved" | "disapproved" | "error"; report: string; at: string }
+  | { state: "skipped"; reason: "disabled" | "user_aborted"; at: string };
+
+export function latestAuditLifecycleForGoal(events: GoalLedgerEvent[], goalId: string): GoalAuditLifecycle {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const event = events[i]!
+    if (!("goalId" in event) || event.goalId !== goalId) continue;
+    if (event.type === "audit_result") {
+      return { state: "settled", verdict: event.verdict, report: event.report, at: event.at };
+    }
+    if (event.type === "audit_skipped") return { state: "skipped", reason: event.reason, at: event.at };
+    if (event.type === "audit_started") {
+      return { state: "unsettled", startedAt: event.at, provider: event.provider, model: event.model };
+    }
+  }
+  return { state: "none" };
+}
+
 export function latestEventsForGoal(events: GoalLedgerEvent[], goalId: string, limit = 10): GoalLedgerEvent[] {
   const result: GoalLedgerEvent[] = [];
   for (let i = events.length - 1; i >= 0; i--) {

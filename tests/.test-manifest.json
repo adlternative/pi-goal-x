@@ -7,6 +7,7 @@
     ".tests/goal-activity.test.ts",
     ".tests/goal-atomic-rename.test.ts",
     ".tests/goal-audit-dashboard.test.ts",
+    ".tests/goal-audit-interruption.test.ts",
     ".tests/goal-auditor-selector.test.ts",
     ".tests/goal-auditor.test.ts",
     ".tests/goal-budget.test.ts",

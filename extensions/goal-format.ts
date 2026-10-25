@@ -9,7 +9,7 @@ import {
 } from "./goal-core.ts";
 import { buildTaskSummary } from "./goal-policy.ts";
 import { countTaskSubtree } from "./goal-task-count.ts";
-import { latestAuditorResultForGoal, latestEventsForGoal, type GoalLedgerEvent } from "./goal-ledger.ts";
+import { latestAuditLifecycleForGoal, latestAuditorResultForGoal, latestEventsForGoal, type GoalLedgerEvent } from "./goal-ledger.ts";
 import { GOAL_PROGRESS_TOOL_NAMES } from "./goal-tool-names.ts";
 import {
 	asRecord,
@@ -333,6 +333,13 @@ export function buildGoalHistoryBlock(goal: GoalRecord | null, ledgerEvents: Goa
 	const audit = latestAuditorResultForGoal(ledgerEvents, goal.id);
 	if (audit) {
 		lines.push(`Last audit: ${audit.verdict} (${audit.at.slice(0, 10)}) — ${truncateText(audit.report, 90)}`);
+	} else {
+		// An unsettled review is a real state the agent must not mistake for
+		// "never reviewed": nothing in the ledger will ever close it.
+		const lifecycle = latestAuditLifecycleForGoal(ledgerEvents, goal.id);
+		if (lifecycle.state === "unsettled") {
+			lines.push(`Last audit: no result — the review started ${lifecycle.startedAt.slice(0, 19).replace("T", " ")} and never finished (interrupted).`);
+		}
 	}
 	const recent = latestEventsForGoal(ledgerEvents, goal.id, 6);
 	if (recent.length > 0) {

@@ -14,6 +14,7 @@ import {
 	isMeaningfulProgressToolCall,
 } from "./goal-format.ts";
 import { buildCompactionSummary, buildPostCompactionGoalDelta } from "./goal-compaction.ts";
+import { settleInterruptedAudit } from "./goal-completion.ts";
 import { latestAuditorResultForGoal, readGoalLedger, goalRuntimeEvents, invalidateGoalLedgerCache } from "./goal-ledger.ts";
 import { shouldArmPostCompactReminder, shouldInjectPostCompactReminder } from "./goal-policy.ts";
 import { formatTokenValue } from "./goal-core.ts";
@@ -614,6 +615,11 @@ export function registerGoalEvents(core: GoalCore): void {
 	});
 
 	pi.on("session_shutdown", async (_event, ctx) => {
+		// Settle an in-flight completion audit before the process goes away. The
+		// nested auditor cannot write its own result here, and leaving
+		// audit_started as the last audit event makes an interrupted review look
+		// like one that is still running (or like no review at all).
+		settleInterruptedAudit(core, ctx, "Completion audit did not finish: the session shut down during the review.");
 		core.interruption.reset();
 		core.interruption.settled();
 		core.auditMessages.clear();

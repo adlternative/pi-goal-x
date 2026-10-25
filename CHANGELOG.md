@@ -4,6 +4,10 @@ All notable changes to pi-goal-x are documented here.
 
 ## [Unreleased]
 
+### Fixed
+
+- A completion audit that is interrupted no longer leaves `audit_started` as the last audit event forever. A session shutdown during the review, a throwing auditor, and "continue working" after aborting the audit now settle the review, and `/goal-status`, `/goal-list` and `get_goal` report an unsettled review as `NO RESULT` (with its start time) instead of saying nothing.
+
 ## [0.34.0] — 2026-10-24
 
 Includes #107.

@@ -7,13 +7,43 @@ import {
 	validateGoalCompletion,
 } from "./goal-policy.ts";
 import { loadGoalSettings, loadGoalSettingsFileConfig } from "./goal-settings.ts";
-import { runGoalCompletionAuditor } from "./goal-auditor.ts";
+import { runGoalCompletionAuditor, type GoalAuditorResult } from "./goal-auditor.ts";
 import { nowIso, type GoalRecord } from "./goal-record.ts";
 import { latestEventsForGoal, latestAuditorResultForGoal, goalRuntimeEvents } from "./goal-ledger.ts";
 import { mergeGoalPromptFromDisk } from "./storage/goal-files.ts";
 import { showEscapeDialog, type EscapeDialogResult } from "./widgets/goal-escape-dialog.ts";
 import type { GoalCore } from "./goal-state.ts";
 import type { GoalMutationOutcome } from "./goal-service.ts";
+
+/**
+ * Close a completion audit that will never produce a verdict in this process.
+ *
+ * The in-flight abort controller is the only proof that a review is running:
+ * every settled path (approval, rejection, error, Escape, auditor throw) clears
+ * it before returning. Without this, a shutdown or crash during the audit leaves
+ * `audit_started` as the last audit event forever.
+ *
+ * Returns true when a settlement event was appended.
+ */
+export function settleInterruptedAudit(core: GoalCore, ctx: ExtensionContext, report: string): boolean {
+	if (!core.auditAbortController) return false;
+	core.auditAbortController = null;
+	const goal = core.state.goal;
+	if (!goal) return false;
+	try {
+		core.goalService.appendEvents(ctx, [{
+			type: "audit_result",
+			goalId: goal.id,
+			verdict: "error",
+			report,
+			at: nowIso(),
+		}]);
+		return true;
+	} catch {
+		// Shutdown must never fail because the ledger could not be appended.
+		return false;
+	}
+}
 
 // update_goal(complete) execution path: validates the completable state,
 // runs the independent auditor (or the disabled/legacy-skip branches), and
@@ -249,24 +279,33 @@ if (settings.disabled === true) {
 
 	if (previousAudit?.verdict === "disapproved") warmContext = `${warmContext ?? ""}\nPrevious rejection (verify whether resolved): ${previousAudit.report.slice(0, 600)}`;
 
-	const auditor = await (core.dependencies.runCompletionAuditor ?? runGoalCompletionAuditor)({
-		ctx,
-		goal: auditTarget,
-		detailedSummary: detailedSummary(auditTarget),
-		completionSummary: completionSummary?.trim() || undefined,
-		settings: loadGoalSettings(ctx.cwd),
-		warmContext,
-		signal: completionAuditController.signal,
-		onProgress: (progress) => {
-			core.auditProgress = {
-				...progress,
-				elapsedMs: Date.now() - auditStartedAt,
-			};
-			core.goalWidgetComponentRef.current?.invalidate();
-		},
-	});
-	// Clear abort controller — audit finished on its own
-	if (core.auditAbortController === completionAuditController) core.auditAbortController = null;
+	let auditor: GoalAuditorResult;
+	try {
+		auditor = await (core.dependencies.runCompletionAuditor ?? runGoalCompletionAuditor)({
+			ctx,
+			goal: auditTarget,
+			detailedSummary: detailedSummary(auditTarget),
+			completionSummary: completionSummary?.trim() || undefined,
+			settings: loadGoalSettings(ctx.cwd),
+			warmContext,
+			signal: completionAuditController.signal,
+			onProgress: (progress) => {
+				core.auditProgress = {
+					...progress,
+					elapsedMs: Date.now() - auditStartedAt,
+				};
+				core.goalWidgetComponentRef.current?.invalidate();
+			},
+		});
+	} catch (error) {
+		// A throwing auditor must still settle the audit_started written above:
+		// an open review is indistinguishable from one that is still running.
+		const message = error instanceof Error ? error.message : String(error);
+		auditor = { approved: false, disapproved: false, output: `Auditor failed: ${message}`, error: message };
+	} finally {
+		// Clear abort controller — the audit is no longer in flight either way.
+		if (core.auditAbortController === completionAuditController) core.auditAbortController = null;
+	}
 	// Clear auditor progress display
 	core.stopAuditAnimation();
 	if (!core.isFocusedOperationCurrent(completionFocus)) {
@@ -332,7 +371,20 @@ if (settings.disabled === true) {
 			});
 		}
 		// ── Continue working ────────────────────────────────────────
-		// The goal stays active: no pause, no stop marker, no skip event.
+		// The goal stays active: no pause, no stop marker, no skip event. The
+		// review that started above is settled as interrupted, so the ledger does
+		// not keep an open audit_started that no run will ever close.
+		try {
+			core.goalService.appendEvents(ctx, [{
+				type: "audit_result",
+				goalId: auditTarget.id,
+				verdict: "error",
+				report: "Completion audit was aborted by the user; the goal remains active and work continues.",
+				at: nowIso(),
+			}]);
+		} catch {
+			// Ledger append failure should not block the user's choice
+		}
 		core.goalWidgetComponentRef.current?.invalidate();
 		core.updateUI(ctx);
 		return {

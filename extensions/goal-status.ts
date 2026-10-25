@@ -12,7 +12,7 @@ import type { GoalKeybindings } from "./goal-settings.ts";
 
 import { truncateText } from "./goal-core.ts";
 import type { GoalLedgerEvent, GoalLedgerEvent as LedgerEvent } from "./goal-ledger.ts";
-import { latestAuditorResultForGoal, latestEventsForGoal } from "./goal-ledger.ts";
+import { latestAuditLifecycleForGoal, latestAuditorResultForGoal, latestEventsForGoal } from "./goal-ledger.ts";
 import type { GoalRecord, GoalTask } from "./goal-record.ts";
 import { deriveGoalDashboardModel, formatCompactTokens, formatDashboardDuration } from "./widgets/goal-dashboard-model.ts";
 import {
@@ -101,6 +101,9 @@ export function buildGoalStatusText(options: GoalStatusTextOptions): string {
 	const audit = latestAuditorResultForGoal(events, model.goalId);
 	if (audit) {
 		parts.push(lastAuditBlock(audit, width));
+	} else {
+		const lifecycle = latestAuditLifecycleForGoal(events, model.goalId);
+		if (lifecycle.state === "unsettled") parts.push(unsettledAuditBlock(lifecycle.startedAt, width));
 	}
 	return parts.join("\n\n");
 }
@@ -210,9 +213,25 @@ function lastAuditBlock(
 ): string {
 	const verdictLabel = audit.verdict === "approved" ? "APPROVED" : audit.verdict === "disapproved" ? "CHANGES REQUIRED" : "ERROR";
 	const line = `Last audit: ${verdictLabel} (${audit.at.slice(0, 10)}) — ${truncateText(audit.report.replace(/\s+/g, " "), 90)}`;
+	return auditBlock("Audit result", verdictLabel, line, width);
+}
+
+/**
+ * A review that started but never settled (process died, session replaced, or
+ * the audit was abandoned) has no verdict to show. Saying so explicitly is the
+ * difference between "nothing happened yet" and "a review was lost".
+ */
+function unsettledAuditBlock(startedAt: string, width: number): string {
+	const when = `${startedAt.slice(0, 10)} ${startedAt.slice(11, 16)}`.trim();
+	const line = `Last audit: NO RESULT (started ${when}) — the review never recorded a verdict. Request completion again, or /goal-resume to continue the goal.`;
+	return auditBlock("Audit result", "NO RESULT", line, width);
+}
+
+function auditBlock(title: string, label: string, line: string, width: number): string {
 	const inner = Math.max(4, width - 2);
+	const heading = `─ ${title} ─ ${label} `;
 	return [
-		`╭─ Audit result ─ ${verdictLabel} ${"─".repeat(Math.max(1, inner - visibleLen(`─ Audit result ─ ${verdictLabel} `) - 1))}╮`,
+		`╭${heading}${"─".repeat(Math.max(1, inner - visibleLen(heading) - 1))}╮`,
 		`│ ${truncateText(line, inner - 2)}${" ".repeat(Math.max(0, inner - 2 - truncateText(line, inner - 2).length))}│`,
 		`╰${"─".repeat(inner)}╯`,
 	].join("\n");
@@ -271,6 +290,11 @@ function buildVerboseStatus(goal: GoalRecord, model: ReturnType<typeof deriveGoa
 	if (audit) {
 		lines.push("", `Last audit (${audit.at.slice(0, 10)}): ${audit.verdict}`);
 		lines.push(truncateText(audit.report.replace(/\s+/g, " "), 400));
+	} else {
+		const lifecycle = latestAuditLifecycleForGoal(events, goal.id);
+		if (lifecycle.state === "unsettled") {
+			lines.push("", `Last audit: no result — the review started ${lifecycle.startedAt.slice(0, 19).replace("T", " ")} and never finished.`);
+		}
 	}
 	if (settingsReport.length > 0) {
 		lines.push("", "Effective settings:");
