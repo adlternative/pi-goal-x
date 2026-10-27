@@ -1,3 +1,10 @@
+import {
+  createInitialSnake,
+  spawnFood,
+  tick,
+  keyToDirection,
+} from "./logic.mjs";
+
 (function () {
   "use strict";
 
@@ -37,25 +44,6 @@
   let loopId;
   let gameOver;
   let pulsePhase = 0;
-
-  function randCell() {
-    return {
-      x: Math.floor(Math.random() * COLS),
-      y: Math.floor(Math.random() * ROWS),
-    };
-  }
-
-  function same(a, b) {
-    return a.x === b.x && a.y === b.y;
-  }
-
-  function spawnFood() {
-    let spot;
-    do {
-      spot = randCell();
-    } while (snake.some((s) => same(s, spot)));
-    food = spot;
-  }
 
   function roundRect(x, y, w, h, r) {
     const rad = Math.min(r, w / 2, h / 2);
@@ -175,13 +163,7 @@
   }
 
   function reset() {
-    const mid = Math.floor(COLS / 2);
-    const midY = Math.floor(ROWS / 2);
-    snake = [
-      { x: mid, y: midY },
-      { x: mid - 1, y: midY },
-      { x: mid - 2, y: midY },
-    ];
+    snake = createInitialSnake(COLS, ROWS);
     direction = { x: 1, y: 0 };
     nextDirection = null;
     score = 0;
@@ -193,51 +175,35 @@
     restartBtn.classList.add("hidden");
     overlayEl.classList.add("hidden");
     overlayEl.setAttribute("aria-hidden", "true");
-    spawnFood();
+    food = spawnFood(COLS, ROWS, snake);
     draw();
   }
 
-  function tick() {
+  function runTick() {
     if (gameOver) {
       draw();
       return;
     }
 
-    if (nextDirection) {
-      const opposite =
-        nextDirection.x === -direction.x && nextDirection.y === -direction.y;
-      if (!opposite) {
-        direction = nextDirection;
-      }
-      nextDirection = null;
-    }
+    const queued = nextDirection;
+    nextDirection = null;
+    const before = { snake, direction, food, score, gameOver };
+    const after = tick(before, COLS, ROWS, queued);
 
-    const head = snake[0];
-    const newHead = {
-      x: head.x + direction.x,
-      y: head.y + direction.y,
-    };
+    snake = after.snake;
+    direction = after.direction;
+    food = after.food;
+    score = after.score;
+    gameOver = after.gameOver;
 
-    if (
-      newHead.x < 0 ||
-      newHead.x >= COLS ||
-      newHead.y < 0 ||
-      newHead.y >= ROWS ||
-      snake.some((s) => same(s, newHead))
-    ) {
+    if (gameOver) {
       endGame();
       return;
     }
 
-    snake.unshift(newHead);
-
-    if (same(newHead, food)) {
-      score += 1;
+    if (after.score > before.score) {
       scoreEl.textContent = String(score);
       bumpScore();
-      spawnFood();
-    } else {
-      snake.pop();
     }
 
     draw();
@@ -256,19 +222,14 @@
 
   function startLoop() {
     if (loopId) clearInterval(loopId);
-    loopId = setInterval(tick, TICK_MS);
+    loopId = setInterval(runTick, TICK_MS);
   }
 
   function handleKey(e) {
     const key = e.key.toLowerCase();
-    /** @type {{ x: number, y: number } | null} */
-    let dir = null;
+    const dir = keyToDirection(e.key);
 
-    if (key === "arrowup" || key === "w") dir = { x: 0, y: -1 };
-    else if (key === "arrowdown" || key === "s") dir = { x: 0, y: 1 };
-    else if (key === "arrowleft" || key === "a") dir = { x: -1, y: 0 };
-    else if (key === "arrowright" || key === "d") dir = { x: 1, y: 0 };
-    else if (key === "r" && gameOver) {
+    if (key === "r" && gameOver) {
       reset();
       return;
     }
