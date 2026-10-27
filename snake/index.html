@@ -4,16 +4,37 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Snake</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&family=Outfit:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
+    <div class="backdrop" aria-hidden="true"></div>
     <main class="game">
       <header class="hud">
-        <h1>Snake</h1>
-        <p class="score">Score: <span id="score">0</span></p>
+        <div class="brand">
+          <span class="brand-icon" aria-hidden="true">◉</span>
+          <h1>Snake</h1>
+        </div>
+        <div class="score-panel">
+          <span class="score-label">Score</span>
+          <span id="score" class="score-value">0</span>
+        </div>
       </header>
-      <canvas id="board" width="400" height="400" aria-label="Snake game board"></canvas>
-      <p id="status" class="status" role="status">Arrow keys or WASD to move</p>
+      <div class="board-wrap">
+        <canvas id="board" width="400" height="400" aria-label="Snake game board"></canvas>
+        <div id="overlay" class="overlay hidden" aria-hidden="true">
+          <p class="overlay-title">Game over</p>
+          <p class="overlay-score">Score <span id="final-score">0</span></p>
+        </div>
+      </div>
+      <p id="status" class="status" role="status">
+        <kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> or <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> to move
+      </p>
       <button type="button" id="restart" class="restart hidden">Play again</button>
     </main>
     <script src="game.js"></script>
