@@ -81,6 +81,7 @@
     ".tests/session-checkpoint-growth.test.ts",
     ".tests/session-checkpoint-recovery.test.ts",
     ".tests/session-state-growth.test.ts",
+    ".tests/snake-logic.test.ts",
     ".tests/task-list-overlay.test.ts",
     ".tests/verification-contract.test.ts"
   ],
